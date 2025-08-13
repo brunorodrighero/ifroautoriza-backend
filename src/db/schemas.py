@@ -42,6 +42,29 @@ class Event(EventBase):
     class Config:
         from_attributes = True
 
+# NOVO: Schema para a lista pública de eventos
+class EventPublicList(BaseModel):
+    titulo: str
+    data_evento: datetime
+    local_evento: Optional[str] = None
+    link_unico: str
+    
+    class Config:
+        from_attributes = True
+
+# NOVO: Schema para o detalhe público de um evento
+class EventPublicDetail(BaseModel):
+    id: int # Incluímos o ID para a nova rota de inscrição
+    titulo: str
+    descricao: Optional[str] = None
+    data_evento: datetime
+    local_evento: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+
 # --- Schemas de Autorização ---
 class AuthorizationPreRegister(BaseModel):
     nome_aluno: str

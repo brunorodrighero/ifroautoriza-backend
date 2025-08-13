@@ -12,6 +12,30 @@ from . import event_model_generator
 
 router = APIRouter()
 
+# =================================================================
+# ROTAS PÚBLICAS (NOVAS)
+# =================================================================
+
+@router.get("/publicos", response_model=List[schemas.EventPublicList])
+def read_public_events(db: Session = Depends(get_db)):
+    """
+    Retorna uma lista simplificada de todos os eventos para a página pública.
+    """
+    events = db.query(models.Evento).order_by(models.Evento.data_evento.desc()).all()
+    return events
+
+@router.get("/publico/{link_unico}", response_model=schemas.EventPublicDetail)
+def read_public_event_by_link(link_unico: str, db: Session = Depends(get_db)):
+    """
+    Busca os detalhes públicos de um evento pelo seu link único.
+    """
+    event = db.query(models.Evento).filter(models.Evento.link_unico == link_unico).first()
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado")
+    return event
+
+
+
 @router.post("/", response_model=schemas.Event, status_code=status.HTTP_201_CREATED)
 def create_event(
     event_in: schemas.EventCreate,

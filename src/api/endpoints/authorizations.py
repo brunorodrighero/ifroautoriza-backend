@@ -94,6 +94,53 @@ def get_authorization_file(autorizacao: models.Autorizacao = Depends(get_authori
 # =================================================================
 # ROTAS PÚBLICAS (NÃO REQUEREM AUTENTICAÇÃO)
 # =================================================================
+@router.post("/evento/{evento_id}/inscrever-se", response_model=schemas.AuthorizationForProfessor, status_code=status.HTTP_201_CREATED)
+async def student_self_register_and_submit(
+    evento_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    nome_aluno: str = Form(...),
+    matricula_aluno: str = Form(None),
+    email_aluno: str = Form(...),
+    nome_responsavel: str = Form(...),
+    email_responsavel: str = Form(...),
+    arquivo: UploadFile = File(...)
+):
+    """
+    NOVO: Permite que um aluno se inscreva e submeta a autorização diretamente,
+    criando um novo registro de autorização.
+    """
+    db_event = db.query(models.Evento).filter(models.Evento.id == evento_id).first()
+    if not db_event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado.")
+
+    saved_file_path = await save_upload_file(arquivo)
+    
+    new_auth_data = {
+        "evento_id": evento_id,
+        "nome_aluno": nome_aluno,
+        "matricula_aluno": matricula_aluno,
+        "email_aluno": email_aluno,
+        "nome_responsavel": nome_responsavel,
+        "email_responsavel": email_responsavel,
+        "caminho_arquivo": saved_file_path,
+        "nome_arquivo_original": arquivo.filename,
+        "tamanho_arquivo": arquivo.size,
+        "tipo_arquivo": arquivo.content_type,
+        "status": 'submetido'
+    }
+    
+    db_auth = models.Autorizacao(**new_auth_data)
+    db.add(db_auth)
+    db.commit()
+    db.refresh(db_auth)
+    logger.info(f"Nova inscrição e submissão recebida para o aluno '{db_auth.nome_aluno}' (Auth ID: {db_auth.id}).")
+    
+    background_tasks.add_task(EmailService.send_submission_confirmation_to_student, db_auth)
+    background_tasks.add_task(EmailService.notify_teacher_of_new_submission, db_auth)
+    
+    return db_auth
+
 
 @router.get("/eventos/{evento_id}/pre-cadastrados", response_model=List[schemas.AuthorizationForStudentList])
 def get_preregistered_students(evento_id: int, db: Session = Depends(get_db)):
