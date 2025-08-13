@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+# src/api/endpoints/events.py
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import uuid
+from typing import List
 
-from src.api.deps import get_db, get_current_active_user
+from src.api.deps import get_db, get_current_active_user, get_event_by_id_for_user
 from src.db import models, schemas
 from src.services.file_service import delete_file
 from src.utils.logger import logger
@@ -10,7 +12,7 @@ from . import event_model_generator
 
 router = APIRouter()
 
-@router.post("/", response_model=schemas.Event, status_code=201)
+@router.post("/", response_model=schemas.Event, status_code=status.HTTP_201_CREATED)
 def create_event(
     event_in: schemas.EventCreate,
     db: Session = Depends(get_db),
@@ -24,57 +26,47 @@ def create_event(
     logger.info(f"Usuário '{current_user.email}' criou o evento '{db_event.titulo}' (ID: {db_event.id})")
     return db_event
 
-@router.get("/", response_model=list[schemas.Event])
+@router.get("/", response_model=List[schemas.Event])
 def read_events(
     db: Session = Depends(get_db),
     current_user: models.Usuario = Depends(get_current_active_user)
 ):
-    events = db.query(models.Evento).filter(models.Evento.usuario_id == current_user.id).order_by(models.Evento.data_evento.desc()).all()
+    # Admin vê todos os eventos, professor vê apenas os seus.
+    if current_user.tipo == 'admin':
+        events = db.query(models.Evento).order_by(models.Evento.data_evento.desc()).all()
+    else:
+        events = db.query(models.Evento).filter(models.Evento.usuario_id == current_user.id).order_by(models.Evento.data_evento.desc()).all()
+
     for event in events:
         event.autorizacoes_count = len(event.autorizacoes)
     return events
 
 @router.get("/{event_id}", response_model=schemas.Event)
-def read_event(event_id: int, db: Session = Depends(get_db)):
-    db_event = db.query(models.Evento).filter(models.Evento.id == event_id).first()
-    if not db_event:
-        raise HTTPException(status_code=404, detail="Evento não encontrado")
-    return db_event
+def read_event(event: models.Evento = Depends(get_event_by_id_for_user)):
+    # A dependência já faz a busca e a verificação de permissão.
+    return event
 
 @router.put("/{event_id}", response_model=schemas.Event)
 def update_event(
-    event_id: int,
     event_in: schemas.EventUpdate,
-    db: Session = Depends(get_db),
-    current_user: models.Usuario = Depends(get_current_active_user)
+    db_event: models.Evento = Depends(get_event_by_id_for_user),
+    db: Session = Depends(get_db)
 ):
-    db_event = db.query(models.Evento).filter(models.Evento.id == event_id).first()
-    if not db_event:
-        raise HTTPException(status_code=404, detail="Evento não encontrado")
-    if db_event.usuario_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Não autorizado")
-
     update_data = event_in.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_event, key, value)
     
     db.commit()
     db.refresh(db_event)
-    logger.info(f"Evento {event_id} atualizado pelo usuário '{current_user.email}'")
+    logger.info(f"Evento {db_event.id} atualizado.")
     return db_event
 
-@router.delete("/{event_id}", status_code=204)
+@router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_event(
-    event_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.Usuario = Depends(get_current_active_user)
+    db_event: models.Evento = Depends(get_event_by_id_for_user),
+    db: Session = Depends(get_db)
 ):
-    db_event = db.query(models.Evento).filter(models.Evento.id == event_id).first()
-    if not db_event:
-        raise HTTPException(status_code=404, detail="Evento não encontrado")
-    if db_event.usuario_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Não autorizado")
-
+    event_id = db_event.id
     for autorizacao in db_event.autorizacoes:
         if autorizacao.caminho_arquivo:
             try:
@@ -84,7 +76,7 @@ def delete_event(
 
     db.delete(db_event)
     db.commit()
-    logger.warning(f"Evento {event_id} e seus dados foram DELETADOS por '{current_user.email}'")
+    logger.warning(f"Evento {event_id} e todos os seus dados foram DELETADOS.")
     return
 
-router.include_router(event_model_generator.router, prefix="/{evento_id}/modelo")
+router.include_router(event_model_generator.router, prefix="/{event_id}/modelo")

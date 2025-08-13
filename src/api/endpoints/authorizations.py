@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 from typing import List
 
-from src.api.deps import get_db, get_current_active_user
+from src.api.deps import get_db, get_current_active_user, get_event_by_id_for_user, get_authorization_by_id_for_user
 from src.db import models, schemas
 from src.services.email_service import EmailService
 from src.services.file_service import save_upload_file
@@ -21,49 +21,31 @@ router = APIRouter()
 
 @router.post("/eventos/{evento_id}/pre-cadastrar", response_model=schemas.AuthorizationForProfessor, status_code=status.HTTP_201_CREATED)
 def preregister_student(
-    evento_id: int,
     student_in: schemas.AuthorizationPreRegister,
-    db: Session = Depends(get_db),
-    current_user: models.Usuario = Depends(get_current_active_user)
+    db_event: models.Evento = Depends(get_event_by_id_for_user),
+    db: Session = Depends(get_db)
 ):
     """Pré-cadastra um aluno em um evento, inserindo apenas nome e matrícula."""
-    db_event = db.query(models.Evento).filter(models.Evento.id == evento_id, models.Evento.usuario_id == current_user.id).first()
-    if not db_event:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado ou não pertence a você.")
-    
-    db_auth = models.Autorizacao(**student_in.model_dump(), evento_id=evento_id, status='pré-cadastrado')
+    db_auth = models.Autorizacao(**student_in.model_dump(), evento_id=db_event.id, status='pré-cadastrado')
     db.add(db_auth)
     db.commit()
     db.refresh(db_auth)
-    logger.info(f"Aluno '{student_in.nome_aluno}' pré-cadastrado no evento {evento_id} pelo usuário '{current_user.email}'.")
+    logger.info(f"Aluno '{student_in.nome_aluno}' pré-cadastrado no evento {db_event.id}.")
     return db_auth
 
 @router.get("/eventos/{evento_id}/autorizacoes", response_model=List[schemas.AuthorizationForProfessor])
-def get_event_authorizations(
-    evento_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.Usuario = Depends(get_current_active_user)
-):
+def get_event_authorizations(event: models.Evento = Depends(get_event_by_id_for_user)):
     """Busca todas as autorizações (em qualquer status) de um evento específico."""
-    event = db.query(models.Evento).filter(models.Evento.id == evento_id).first()
-    if not event or event.usuario_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado ou não autorizado.")
     return sorted(event.autorizacoes, key=lambda x: x.nome_aluno)
 
 @router.patch("/{autorizacao_id}/status", response_model=schemas.AuthorizationForProfessor)
 async def update_authorization_status(
-    autorizacao_id: int,
     status_update: schemas.StatusUpdate,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: models.Usuario = Depends(get_current_active_user)
+    autorizacao: models.Autorizacao = Depends(get_authorization_by_id_for_user),
+    db: Session = Depends(get_db)
 ):
     """UNIFICADO: Aprova ou rejeita uma autorização e dispara o e-mail correspondente."""
-    autorizacao = db.query(models.Autorizacao).filter(models.Autorizacao.id == autorizacao_id).first()
-    if not autorizacao:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Autorização não encontrada")
-    if autorizacao.evento.usuario_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ação não permitida")
     if status_update.status not in ['aprovado', 'rejeitado']:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status inválido. Use 'aprovado' ou 'rejeitado'.")
 
@@ -73,48 +55,32 @@ async def update_authorization_status(
     
     if autorizacao.status == 'aprovado':
         background_tasks.add_task(EmailService.send_approval_notification_to_student, autorizacao)
-        logger.info(f"Autorização {autorizacao.id} APROVADA pelo usuário '{current_user.email}'.")
+        logger.info(f"Autorização {autorizacao.id} APROVADA.")
     elif autorizacao.status == 'rejeitado':
         background_tasks.add_task(EmailService.send_rejection_notification_to_student, autorizacao, status_update.motivo)
-        logger.warning(f"Autorização {autorizacao.id} REJEITADA pelo usuário '{current_user.email}'.")
+        logger.warning(f"Autorização {autorizacao.id} REJEITADA.")
 
     return autorizacao
 
 @router.patch("/{autorizacao_id}/presenca", response_model=schemas.AuthorizationForProfessor)
 def mark_attendance(
-    autorizacao_id: int,
     presente: bool,
-    db: Session = Depends(get_db),
-    current_user: models.Usuario = Depends(get_current_active_user)
+    autorizacao: models.Autorizacao = Depends(get_authorization_by_id_for_user),
+    db: Session = Depends(get_db)
 ):
     """Marca a presença de um aluno em um evento."""
-    autorizacao = db.query(models.Autorizacao).filter(models.Autorizacao.id == autorizacao_id).first()
-    if not autorizacao:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Autorização não encontrada")
-    if autorizacao.evento.usuario_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ação não permitida")
     if autorizacao.status != 'aprovado':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Apenas autorizações aprovadas podem ter a presença marcada.")
     
     autorizacao.presente = presente
     db.commit()
     db.refresh(autorizacao)
-    logger.info(f"Presença do aluno '{autorizacao.nome_aluno}' (Auth ID: {autorizacao_id}) marcada como {presente}.")
+    logger.info(f"Presença do aluno '{autorizacao.nome_aluno}' (Auth ID: {autorizacao.id}) marcada como {presente}.")
     return autorizacao
 
 @router.get("/{autorizacao_id}/arquivo", response_class=FileResponse)
-def get_authorization_file(
-    autorizacao_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.Usuario = Depends(get_current_active_user)
-):
+def get_authorization_file(autorizacao: models.Autorizacao = Depends(get_authorization_by_id_for_user)):
     """Permite que o professor baixe o arquivo de autorização enviado pelo aluno."""
-    autorizacao = db.query(models.Autorizacao).filter(models.Autorizacao.id == autorizacao_id).first()
-    if not autorizacao:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Autorização não encontrada")
-    if autorizacao.evento.usuario_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado")
-    
     if not autorizacao.caminho_arquivo:
         raise HTTPException(status_code=404, detail="Nenhum arquivo associado a esta autorização.")
         
@@ -131,7 +97,7 @@ def get_authorization_file(
 
 @router.get("/eventos/{evento_id}/pre-cadastrados", response_model=List[schemas.AuthorizationForStudentList])
 def get_preregistered_students(evento_id: int, db: Session = Depends(get_db)):
-    """Retorna a lista de alunos pré-cadastrados para o formulário público."""
+    """Retorna la lista de alunos pré-cadastrados para o formulário público."""
     students = db.query(models.Autorizacao).filter(
         models.Autorizacao.evento_id == evento_id,
         models.Autorizacao.status == 'pré-cadastrado'
@@ -168,7 +134,6 @@ async def student_submit_authorization(
     db.refresh(db_auth)
     logger.info(f"Submissão recebida para o aluno '{db_auth.nome_aluno}' (Auth ID: {db_auth.id}).")
     
-    # Dispara os emails de notificação
     background_tasks.add_task(EmailService.send_submission_confirmation_to_student, db_auth)
     background_tasks.add_task(EmailService.notify_teacher_of_new_submission, db_auth)
     

@@ -1,3 +1,4 @@
+# src/db/models.py
 from sqlalchemy import (Column, Integer, String, Boolean, DateTime,
                         ForeignKey, Enum, Text)
 from sqlalchemy.orm import relationship
@@ -12,7 +13,7 @@ class Usuario(Base):
     nome = Column(String(255), nullable=False)
     email = Column(String(320), unique=True, index=True, nullable=False)
     senha_hash = Column(String(255), nullable=False)
-    tipo = Column(Enum('professor', 'instituicao', name='user_tipo'), default='professor')
+    tipo = Column(Enum('professor', 'instituicao', 'admin', name='user_tipo'), default='professor', nullable=False)
     ativo = Column(Boolean, default=True)
     ultimo_login = Column(DateTime)
     criado_em = Column(DateTime, server_default=func.now())
