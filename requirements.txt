@@ -13,3 +13,4 @@ slowapi
 Jinja2
 python-multipart
 python-docx
+aiofiles
