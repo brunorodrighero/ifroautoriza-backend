@@ -1,0 +1,66 @@
+# Arquivos de Ambiente Virtual
+# Ignora a pasta do ambiente virtual, que contém as dependências instaladas.
+venv/
+.venv/
+env/
+.env/
+venv.bak/
+.env.bak/
+
+# Arquivos de configuração de ambiente
+# O arquivo .env contém senhas e chaves de API, NUNCA deve ir para o GitHub.
+.env
+.env.*
+!.env.example
+
+# Arquivos de Cache do Python
+# Gerados automaticamente pelo interpretador para acelerar a execução.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Arquivos de pacotes e build
+# Gerados durante o processo de empacotamento.
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Arquivos de configuração de IDEs e editores
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+# Arquivos de log gerados pela aplicação.
+logs/
+*.log
+*.log.*
+
+# Arquivos de Banco de Dados
+# Se você usar um banco de dados local como SQLite.
+*.sqlite3
+*.db
+
+# Pasta de Uploads
+# Ignora os arquivos que os usuários enviam.
+# Em produção, essa pasta deve estar em um volume persistente.
+uploads/
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db

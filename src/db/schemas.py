@@ -1,0 +1,76 @@
+# src/db/schemas.py
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
+from datetime import datetime
+
+# --- Schemas de Token e Usuário ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class UserBase(BaseModel):
+    email: EmailStr
+    nome: str
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=8)
+
+class User(UserBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# --- Schemas de Evento ---
+class EventBase(BaseModel):
+    titulo: str = Field(..., min_length=3, max_length=255)
+    descricao: Optional[str] = None
+    data_evento: datetime
+    local_evento: Optional[str] = Field(None, max_length=500)
+    observacoes: Optional[str] = None
+
+class EventCreate(EventBase):
+    pass
+
+class EventUpdate(EventBase):
+    pass
+
+class Event(EventBase):
+    id: int
+    link_unico: str
+    usuario_id: int
+    autorizacoes_count: int = 0
+    class Config:
+        from_attributes = True
+
+# --- Schemas de Autorização ---
+class AuthorizationPreRegister(BaseModel):
+    nome_aluno: str
+    matricula_aluno: Optional[str] = None
+
+class AuthorizationStudentUpdate(BaseModel):
+    email_aluno: EmailStr
+    nome_responsavel: str
+    email_responsavel: EmailStr
+
+class AuthorizationForProfessor(BaseModel):
+    id: int
+    nome_aluno: str
+    matricula_aluno: Optional[str]
+    email_aluno: Optional[EmailStr]
+    nome_responsavel: Optional[str]
+    email_responsavel: Optional[EmailStr]
+    status: str
+    presente: bool
+    submetido_em: datetime
+    class Config:
+        from_attributes = True
+
+class AuthorizationForStudentList(BaseModel):
+    id: int
+    nome_aluno: str
+    class Config:
+        from_attributes = True
+
+class StatusUpdate(BaseModel): # NOVO: Para a rota de atualização de status
+    status: str
+    motivo: Optional[str] = None
