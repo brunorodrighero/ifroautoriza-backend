@@ -43,6 +43,8 @@ async def log_requests_and_add_headers(request: Request, call_next):
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Auth"])
 app.include_router(events.router, prefix=f"{settings.API_V1_STR}/eventos", tags=["Events"])
 app.include_router(authorizations.router, prefix=f"{settings.API_V1_STR}/autorizacoes", tags=["Authorizations"])
+app.include_router(users.router, prefix=f"{settings.API_V1_STR}/usuarios", tags=["Users"]) # 2. Adicione a nova linha
+
 
 @app.get(f"{settings.API_V1_STR}/health", tags=["System"])
 def health_check():

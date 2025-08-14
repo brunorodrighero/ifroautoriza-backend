@@ -15,8 +15,13 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
 
+class UserAdminCreate(UserCreate):
+    tipo: Literal['professor', 'admin'] = 'professor'
+
 class User(UserBase):
     id: int
+    tipo: str # Adicionado para exibir na lista de admin
+    ativo: bool # Adicionado para exibir na lista de admin
     class Config:
         from_attributes = True
 

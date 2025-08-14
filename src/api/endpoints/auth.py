@@ -46,9 +46,7 @@ def register_user(
 def login_for_access_token(
     db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()
 ):
-    """
-    Endpoint para login e obtenção de token JWT.
-    """
+    # ... (lógica de verificação do usuário)
     user = db.query(models.Usuario).filter(models.Usuario.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.senha_hash):
         raise HTTPException(
@@ -59,5 +57,5 @@ def login_for_access_token(
     if not user.ativo:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuário inativo")
 
-    access_token = create_access_token(data={"sub": user.email})
+    access_token = create_access_token(data={"sub": user.email}, user=user) # Passa o objeto 'user'
     return {"access_token": access_token, "token_type": "bearer"}
