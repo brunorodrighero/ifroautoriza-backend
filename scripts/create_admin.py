@@ -2,8 +2,14 @@ import sys
 from pathlib import Path
 from getpass import getpass
 
-# Adiciona o diretório raiz ao path para que possamos importar os módulos do projeto
-sys.path.append(str(Path(__file__).resolve().parent))
+# --- INÍCIO DA CORREÇÃO ---
+# Pega o caminho do diretório onde o script está (a pasta 'scripts')
+script_dir = Path(__file__).resolve().parent
+# Pega o caminho do diretório pai (a raiz do projeto, 'ifroautoriza-backend')
+project_root = script_dir.parent
+# Adiciona a raiz do projeto ao caminho de busca de módulos do Python
+sys.path.append(str(project_root))
+# --- FIM DA CORREÇÃO ---
 
 from src.db.session import SessionLocal
 from src.db.models import Usuario
