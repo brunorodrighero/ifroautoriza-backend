@@ -1,6 +1,6 @@
 # src/db/schemas.py
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, Literal # <-- ESTA É A LINHA ADICIONADA
 from datetime import datetime
 
 # --- Schemas de Token e Usuário ---
@@ -15,13 +15,14 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
 
+# Schema para criação de usuário pelo Admin
 class UserAdminCreate(UserCreate):
     tipo: Literal['professor', 'admin'] = 'professor'
 
 class User(UserBase):
     id: int
-    tipo: str # Adicionado para exibir na lista de admin
-    ativo: bool # Adicionado para exibir na lista de admin
+    tipo: str
+    ativo: bool
     class Config:
         from_attributes = True
 
@@ -47,7 +48,6 @@ class Event(EventBase):
     class Config:
         from_attributes = True
 
-# NOVO: Schema para a lista pública de eventos
 class EventPublicList(BaseModel):
     titulo: str
     data_evento: datetime
@@ -57,9 +57,8 @@ class EventPublicList(BaseModel):
     class Config:
         from_attributes = True
 
-# NOVO: Schema para o detalhe público de um evento
 class EventPublicDetail(BaseModel):
-    id: int # Incluímos o ID para a nova rota de inscrição
+    id: int
     titulo: str
     descricao: Optional[str] = None
     data_evento: datetime
@@ -67,8 +66,6 @@ class EventPublicDetail(BaseModel):
 
     class Config:
         from_attributes = True
-
-
 
 # --- Schemas de Autorização ---
 class AuthorizationPreRegister(BaseModel):
@@ -90,6 +87,9 @@ class AuthorizationForProfessor(BaseModel):
     status: str
     presente: bool
     submetido_em: datetime
+    caminho_arquivo: Optional[str] = None
+    nome_arquivo_original: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -99,6 +99,6 @@ class AuthorizationForStudentList(BaseModel):
     class Config:
         from_attributes = True
 
-class StatusUpdate(BaseModel): # NOVO: Para a rota de atualização de status
+class StatusUpdate(BaseModel):
     status: str
     motivo: Optional[str] = None
