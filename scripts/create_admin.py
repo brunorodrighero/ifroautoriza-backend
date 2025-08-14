@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 from getpass import getpass
+from dotenv import load_dotenv # 1. Importar a função load_dotenv
 
 # --- INÍCIO DA CORREÇÃO ---
 # Pega o caminho do diretório onde o script está (a pasta 'scripts')
@@ -9,8 +10,15 @@ script_dir = Path(__file__).resolve().parent
 project_root = script_dir.parent
 # Adiciona a raiz do projeto ao caminho de busca de módulos do Python
 sys.path.append(str(project_root))
+
+# 2. Define o caminho para o arquivo .env na raiz do projeto
+env_path = project_root / '.env'
+# 3. Carrega as variáveis de ambiente do arquivo .env especificado
+load_dotenv(dotenv_path=env_path)
 # --- FIM DA CORREÇÃO ---
 
+
+# Agora que o .env foi carregado, podemos importar os módulos do projeto com segurança
 from src.db.session import SessionLocal
 from src.db.models import Usuario
 from src.core.security import get_password_hash
@@ -24,18 +32,15 @@ def create_admin_user():
     try:
         print("--- Criação de Usuário Administrador ---")
         
-        # Coleta os dados do novo administrador
         nome = input("Nome completo do admin: ")
         email = input("Email do admin: ")
         
-        # Verifica se o email já existe
         existing_user = db.query(Usuario).filter(Usuario.email == email).first()
         if existing_user:
             logger.error(f"O email '{email}' já está cadastrado. Abortando.")
             print(f"\nERRO: O email '{email}' já está cadastrado. Tente novamente com outro email.")
             return
 
-        # Coleta a senha de forma segura (não exibe na tela)
         password = getpass("Senha (mínimo 8 caracteres): ")
         if len(password) < 8:
             logger.error("A senha informada é muito curta. Abortando.")
@@ -48,19 +53,16 @@ def create_admin_user():
             print("\nERRO: As senhas não coincidem.")
             return
 
-        # Cria o hash da senha
         hashed_password = get_password_hash(password)
 
-        # Cria a nova instância do usuário
         admin_user = Usuario(
             nome=nome,
             email=email,
             senha_hash=hashed_password,
-            tipo='admin',  # Define o tipo como admin
+            tipo='admin',
             ativo=True
         )
 
-        # Adiciona ao banco de dados
         db.add(admin_user)
         db.commit()
 
