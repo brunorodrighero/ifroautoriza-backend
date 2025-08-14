@@ -1,4 +1,3 @@
-# src/api/endpoints/authorizations.py
 from fastapi import (APIRouter, Depends, HTTPException, BackgroundTasks, 
                      UploadFile, File, Form, status)
 from fastapi.responses import FileResponse
@@ -51,15 +50,16 @@ async def update_authorization_status(
 
     autorizacao.status = status_update.status
     db.commit()
-    db.refresh(autorizacao)
     
+    # CORREÇÃO: Passando o ID em vez do objeto para a tarefa em segundo plano
     if autorizacao.status == 'aprovado':
-        background_tasks.add_task(EmailService.send_approval_notification_to_student, autorizacao)
+        background_tasks.add_task(EmailService.send_approval_notification_to_student, autorizacao.id)
         logger.info(f"Autorização {autorizacao.id} APROVADA.")
     elif autorizacao.status == 'rejeitado':
-        background_tasks.add_task(EmailService.send_rejection_notification_to_student, autorizacao, status_update.motivo)
+        background_tasks.add_task(EmailService.send_rejection_notification_to_student, autorizacao.id, status_update.motivo)
         logger.warning(f"Autorização {autorizacao.id} REJEITADA.")
-
+    
+    db.refresh(autorizacao)
     return autorizacao
 
 @router.patch("/{autorizacao_id}/presenca", response_model=schemas.AuthorizationForProfessor)
@@ -107,8 +107,7 @@ async def student_self_register_and_submit(
     arquivo: UploadFile = File(...)
 ):
     """
-    NOVO: Permite que um aluno se inscreva e submeta a autorização diretamente,
-    criando um novo registro de autorização.
+    Permite que um aluno se inscreva e submeta a autorização diretamente.
     """
     db_event = db.query(models.Evento).filter(models.Evento.id == evento_id).first()
     if not db_event:
@@ -117,17 +116,11 @@ async def student_self_register_and_submit(
     saved_file_path = await save_upload_file(arquivo)
     
     new_auth_data = {
-        "evento_id": evento_id,
-        "nome_aluno": nome_aluno,
-        "matricula_aluno": matricula_aluno,
-        "email_aluno": email_aluno,
-        "nome_responsavel": nome_responsavel,
-        "email_responsavel": email_responsavel,
-        "caminho_arquivo": saved_file_path,
-        "nome_arquivo_original": arquivo.filename,
-        "tamanho_arquivo": arquivo.size,
-        "tipo_arquivo": arquivo.content_type,
-        "status": 'submetido'
+        "evento_id": evento_id, "nome_aluno": nome_aluno, "matricula_aluno": matricula_aluno,
+        "email_aluno": email_aluno, "nome_responsavel": nome_responsavel,
+        "email_responsavel": email_responsavel, "caminho_arquivo": saved_file_path,
+        "nome_arquivo_original": arquivo.filename, "tamanho_arquivo": arquivo.size,
+        "tipo_arquivo": arquivo.content_type, "status": 'submetido'
     }
     
     db_auth = models.Autorizacao(**new_auth_data)
@@ -136,15 +129,16 @@ async def student_self_register_and_submit(
     db.refresh(db_auth)
     logger.info(f"Nova inscrição e submissão recebida para o aluno '{db_auth.nome_aluno}' (Auth ID: {db_auth.id}).")
     
-    background_tasks.add_task(EmailService.send_submission_confirmation_to_student, db_auth)
-    background_tasks.add_task(EmailService.notify_teacher_of_new_submission, db_auth)
+    # CORREÇÃO: Passando o ID do objeto recém-criado para as tarefas em segundo plano
+    background_tasks.add_task(EmailService.send_submission_confirmation_to_student, db_auth.id)
+    background_tasks.add_task(EmailService.notify_teacher_of_new_submission, db_auth.id)
     
     return db_auth
 
 
 @router.get("/eventos/{evento_id}/pre-cadastrados", response_model=List[schemas.AuthorizationForStudentList])
 def get_preregistered_students(evento_id: int, db: Session = Depends(get_db)):
-    """Retorna la lista de alunos pré-cadastrados para o formulário público."""
+    """Retorna a lista de alunos pré-cadastrados para o formulário público."""
     students = db.query(models.Autorizacao).filter(
         models.Autorizacao.evento_id == evento_id,
         models.Autorizacao.status == 'pré-cadastrado'
@@ -181,7 +175,8 @@ async def student_submit_authorization(
     db.refresh(db_auth)
     logger.info(f"Submissão recebida para o aluno '{db_auth.nome_aluno}' (Auth ID: {db_auth.id}).")
     
-    background_tasks.add_task(EmailService.send_submission_confirmation_to_student, db_auth)
-    background_tasks.add_task(EmailService.notify_teacher_of_new_submission, db_auth)
+    # CORREÇÃO: Passando o ID para as tarefas em segundo plano
+    background_tasks.add_task(EmailService.send_submission_confirmation_to_student, db_auth.id)
+    background_tasks.add_task(EmailService.notify_teacher_of_new_submission, db_auth.id)
     
     return db_auth

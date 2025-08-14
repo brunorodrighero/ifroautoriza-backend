@@ -5,7 +5,8 @@ from pathlib import Path
 
 from src.core.config import settings
 from src.utils.logger import logger
-from src.db.models import Autorizacao, Evento, Usuario
+from src.db.models import Autorizacao
+from src.db.session import SessionLocal # Importar o SessionLocal
 
 class EmailService:
     """
@@ -23,7 +24,6 @@ class EmailService:
         VALIDATE_CERTS=True
     )
     
-    # Aponta para a pasta que conterá os arquivos .html dos emails.
     template_env = Environment(
         loader=FileSystemLoader(Path(__file__).parent / 'email_templates'),
         autoescape=select_autoescape(['html'])
@@ -31,11 +31,7 @@ class EmailService:
 
     @classmethod
     async def send_email(cls, subject: str, recipients: list, template_name: str, template_body: dict):
-        """
-        Método base genérico para enviar um email usando um template.
-        """
         try:
-            # Filtra destinatários nulos ou vazios
             valid_recipients = [email for email in recipients if email]
             if not valid_recipients:
                 logger.warning(f"Nenhum destinatário válido para o email '{subject}'. Pulando envio.")
@@ -56,52 +52,54 @@ class EmailService:
         except Exception as e:
             logger.error(f"Falha catastrófica ao enviar email '{subject}' para {recipients}: {e}")
 
+    # --- FUNÇÕES DE E-MAIL ATUALIZADAS PARA USAR IDs ---
+
     @classmethod
-    async def send_submission_confirmation_to_student(cls, autorizacao: Autorizacao):
-        """
-        Enviado para o aluno e seu responsável após a submissão bem-sucedida do formulário.
-        """
+    def get_autorizacao_from_db(cls, autorizacao_id: int):
+        """Função auxiliar para buscar uma autorização fresca do DB."""
+        db = SessionLocal()
+        try:
+            # Eager loading para já carregar o evento e o criador junto
+            from sqlalchemy.orm import joinedload
+            autorizacao = db.query(Autorizacao).options(
+                joinedload(Autorizacao.evento).joinedload(models.Evento.criador)
+            ).filter(Autorizacao.id == autorizacao_id).first()
+            return autorizacao
+        finally:
+            db.close()
+
+    @classmethod
+    async def send_submission_confirmation_to_student(cls, autorizacao_id: int):
+        autorizacao = cls.get_autorizacao_from_db(autorizacao_id)
+        if not autorizacao: return
         subject = f"Confirmação de Recebimento - Evento: {autorizacao.evento.titulo}"
         recipients = [autorizacao.email_aluno, autorizacao.email_responsavel]
-        template_body = {
-            "aluno": autorizacao,
-            "evento": autorizacao.evento
-        }
+        template_body = {"aluno": autorizacao, "evento": autorizacao.evento}
         await cls.send_email(subject, recipients, "confirmacao_submissao.html", template_body)
 
     @classmethod
-    async def notify_teacher_of_new_submission(cls, autorizacao: Autorizacao):
-        """
-        Enviado para o professor responsável pelo evento quando uma nova autorização é submetida.
-        """
+    async def notify_teacher_of_new_submission(cls, autorizacao_id: int):
+        autorizacao = cls.get_autorizacao_from_db(autorizacao_id)
+        if not autorizacao: return
         professor = autorizacao.evento.criador
         subject = f"Nova Autorização Submetida para o Evento: {autorizacao.evento.titulo}"
         recipients = [professor.email]
-        template_body = {
-            "aluno": autorizacao,
-            "evento": autorizacao.evento,
-            "professor": professor
-        }
+        template_body = {"aluno": autorizacao, "evento": autorizacao.evento, "professor": professor}
         await cls.send_email(subject, recipients, "notificacao_professor.html", template_body)
 
     @classmethod
-    async def send_approval_notification_to_student(cls, autorizacao: Autorizacao):
-        """
-        Enviado para o aluno e seu responsável quando a autorização é APROVADA.
-        """
+    async def send_approval_notification_to_student(cls, autorizacao_id: int):
+        autorizacao = cls.get_autorizacao_from_db(autorizacao_id)
+        if not autorizacao: return
         subject = f"✅ Autorização APROVADA - Evento: {autorizacao.evento.titulo}"
         recipients = [autorizacao.email_aluno, autorizacao.email_responsavel]
-        template_body = {
-            "aluno": autorizacao,
-            "evento": autorizacao.evento
-        }
+        template_body = {"aluno": autorizacao, "evento": autorizacao.evento}
         await cls.send_email(subject, recipients, "confirmacao_aprovacao.html", template_body)
 
     @classmethod
-    async def send_rejection_notification_to_student(cls, autorizacao: Autorizacao, motivo: str = ""):
-        """
-        Enviado para o aluno e seu responsável quando a autorização é REJEITADA.
-        """
+    async def send_rejection_notification_to_student(cls, autorizacao_id: int, motivo: str = ""):
+        autorizacao = cls.get_autorizacao_from_db(autorizacao_id)
+        if not autorizacao: return
         subject = f"❌ Autorização Rejeitada - Evento: {autorizacao.evento.titulo}"
         recipients = [autorizacao.email_aluno, autorizacao.email_responsavel]
         template_body = {
