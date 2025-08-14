@@ -9,7 +9,8 @@ from datetime import datetime
 
 from src.core.config import settings
 from src.utils.logger import logger
-from src.api.endpoints import auth, events, authorizations
+# CORREÇÃO AQUI: Adicionado 'users' à lista de importação
+from src.api.endpoints import auth, events, authorizations, users
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
@@ -40,11 +41,11 @@ async def log_requests_and_add_headers(request: Request, call_next):
     logger.info(f'"{request.method} {request.url.path}" {response.status_code} - {formatted_process_time}ms')
     return response
 
+# Incluindo os routers na aplicação
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Auth"])
 app.include_router(events.router, prefix=f"{settings.API_V1_STR}/eventos", tags=["Events"])
 app.include_router(authorizations.router, prefix=f"{settings.API_V1_STR}/autorizacoes", tags=["Authorizations"])
-app.include_router(users.router, prefix=f"{settings.API_V1_STR}/usuarios", tags=["Users"]) # 2. Adicione a nova linha
-
+app.include_router(users.router, prefix=f"{settings.API_V1_STR}/usuarios", tags=["Users"])
 
 @app.get(f"{settings.API_V1_STR}/health", tags=["System"])
 def health_check():
