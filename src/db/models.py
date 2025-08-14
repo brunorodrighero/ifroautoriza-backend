@@ -12,11 +12,16 @@ class Usuario(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(255), nullable=False)
     email = Column(String(320), unique=True, index=True, nullable=False)
-    senha_hash = Column(String(255), nullable=False)
+    senha_hash = Column(String(255), nullable=True) # Alterado para permitir nulo durante o cadastro
     tipo = Column(Enum('professor', 'instituicao', 'admin', name='user_tipo'), default='professor', nullable=False)
-    ativo = Column(Boolean, default=True)
+    ativo = Column(Boolean, default=False) # Alterado para False, usuário só ativa após confirmar email
     ultimo_login = Column(DateTime)
     criado_em = Column(DateTime, server_default=func.now())
+    
+    # --- NOVOS CAMPOS ADICIONADOS ---
+    codigo_verificacao = Column(String(6), nullable=True)
+    codigo_verificacao_expira_em = Column(DateTime, nullable=True)
+    
     eventos = relationship("Evento", back_populates="criador", cascade="all, delete-orphan")
 
 class Evento(Base):

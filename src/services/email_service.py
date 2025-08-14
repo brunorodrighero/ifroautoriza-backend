@@ -6,14 +6,12 @@ from sqlalchemy.orm import joinedload
 
 from src.core.config import settings
 from src.utils.logger import logger
-from src.db.models import Autorizacao, Evento # <--- 'Evento' foi adicionado aqui
-from src.db import models # <--- ESTA É A LINHA DE IMPORTAÇÃO CRÍTICA QUE FALTAVA
+from src.db.models import Autorizacao, Evento
+from src.db import models
 from src.db.session import SessionLocal
 
 class EmailService:
-    """
-    Serviço centralizado para o envio de todos os emails transacionais da aplicação.
-    """
+    # ... (código existente da classe sem alterações) ...
     conf = ConnectionConfig(
         MAIL_USERNAME=settings.SMTP_USER,
         MAIL_PASSWORD=settings.SMTP_PASS,
@@ -33,15 +31,14 @@ class EmailService:
 
     @classmethod
     async def send_email(cls, subject: str, recipients: list, template_name: str, template_body: dict):
+        # ... (código do método send_email sem alterações) ...
         try:
             valid_recipients = [email for email in recipients if email]
             if not valid_recipients:
                 logger.warning(f"Nenhum destinatário válido para o email '{subject}'. Pulando envio.")
                 return
-
             template = cls.template_env.get_template(template_name)
             html_content = template.render(template_body)
-            
             message = MessageSchema(
                 subject=subject,
                 recipients=valid_recipients,
@@ -54,9 +51,24 @@ class EmailService:
         except Exception as e:
             logger.error(f"Falha catastrófica ao enviar email '{subject}' para {recipients}: {e}")
 
+    # --- NOVO MÉTODO ADICIONADO ABAIXO ---
+    @classmethod
+    async def send_verification_code(cls, user: models.Usuario, subject: str):
+        """
+        Envia um e-mail com um código de verificação para o usuário.
+        """
+        recipients = [user.email]
+        template_body = {
+            "assunto": subject,
+            "nome_usuario": user.nome,
+            "codigo": user.codigo_verificacao
+        }
+        await cls.send_email(subject, recipients, "codigo_verificacao.html", template_body)
+
+    # ... (resto dos métodos existentes) ...
     @classmethod
     def get_autorizacao_from_db(cls, autorizacao_id: int):
-        """Função auxiliar para buscar uma autorização fresca do DB."""
+        # ... (código existente) ...
         db = SessionLocal()
         try:
             autorizacao = db.query(Autorizacao).options(
@@ -68,6 +80,7 @@ class EmailService:
 
     @classmethod
     async def send_submission_confirmation_to_student(cls, autorizacao_id: int):
+        # ... (código existente) ...
         autorizacao = cls.get_autorizacao_from_db(autorizacao_id)
         if not autorizacao: return
         subject = f"Confirmação de Recebimento - Evento: {autorizacao.evento.titulo}"
@@ -77,6 +90,7 @@ class EmailService:
 
     @classmethod
     async def notify_teacher_of_new_submission(cls, autorizacao_id: int):
+        # ... (código existente) ...
         autorizacao = cls.get_autorizacao_from_db(autorizacao_id)
         if not autorizacao: return
         professor = autorizacao.evento.criador
@@ -87,6 +101,7 @@ class EmailService:
 
     @classmethod
     async def send_approval_notification_to_student(cls, autorizacao_id: int):
+        # ... (código existente) ...
         autorizacao = cls.get_autorizacao_from_db(autorizacao_id)
         if not autorizacao: return
         subject = f"✅ Autorização APROVADA - Evento: {autorizacao.evento.titulo}"
@@ -96,6 +111,7 @@ class EmailService:
 
     @classmethod
     async def send_rejection_notification_to_student(cls, autorizacao_id: int, motivo: str = ""):
+        # ... (código existente) ...
         autorizacao = cls.get_autorizacao_from_db(autorizacao_id)
         if not autorizacao: return
         subject = f"❌ Autorização Rejeitada - Evento: {autorizacao.evento.titulo}"
