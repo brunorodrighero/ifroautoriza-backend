@@ -2,11 +2,13 @@
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pathlib import Path
+from sqlalchemy.orm import joinedload
 
 from src.core.config import settings
 from src.utils.logger import logger
-from src.db.models import Autorizacao
-from src.db.session import SessionLocal # Importar o SessionLocal
+from src.db.models import Autorizacao, Evento # <--- 'Evento' foi adicionado aqui
+from src.db import models # <--- ESTA É A LINHA DE IMPORTAÇÃO CRÍTICA QUE FALTAVA
+from src.db.session import SessionLocal
 
 class EmailService:
     """
@@ -52,15 +54,11 @@ class EmailService:
         except Exception as e:
             logger.error(f"Falha catastrófica ao enviar email '{subject}' para {recipients}: {e}")
 
-    # --- FUNÇÕES DE E-MAIL ATUALIZADAS PARA USAR IDs ---
-
     @classmethod
     def get_autorizacao_from_db(cls, autorizacao_id: int):
         """Função auxiliar para buscar uma autorização fresca do DB."""
         db = SessionLocal()
         try:
-            # Eager loading para já carregar o evento e o criador junto
-            from sqlalchemy.orm import joinedload
             autorizacao = db.query(Autorizacao).options(
                 joinedload(Autorizacao.evento).joinedload(models.Evento.criador)
             ).filter(Autorizacao.id == autorizacao_id).first()
