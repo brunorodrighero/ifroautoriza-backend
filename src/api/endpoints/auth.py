@@ -49,8 +49,10 @@ async def request_registration_code(
     db_user.codigo_verificacao = generate_verification_code()
     db_user.codigo_verificacao_expira_em = datetime.now() + timedelta(minutes=10)
     db.commit()
+    db.refresh(db_user) # Necessário para obter o ID do novo usuário
     
-    background_tasks.add_task(EmailService.send_verification_code, db_user, "Código de Confirmação de Cadastro")
+    # CORREÇÃO: Passando o ID do usuário em vez do objeto
+    background_tasks.add_task(EmailService.send_verification_code, db_user.id, "Código de Confirmação de Cadastro")
     logger.info(f"Código de cadastro enviado para {user_in.email}")
     return {"message": "Código de verificação enviado para o seu e-mail."}
 
@@ -101,13 +103,12 @@ async def request_password_reset_code(
     user.codigo_verificacao = generate_verification_code()
     user.codigo_verificacao_expira_em = datetime.now() + timedelta(minutes=10)
     db.commit()
+    db.refresh(user) # Necessário para obter o ID
     
-    background_tasks.add_task(EmailService.send_verification_code, user, "Código de Recuperação de Senha")
+    # CORREÇÃO: Passando o ID do usuário em vez do objeto
+    background_tasks.add_task(EmailService.send_verification_code, user.id, "Código de Recuperação de Senha")
     logger.info(f"Código de recuperação de senha enviado para {form_data.email}")
     return {"message": "Código de recuperação enviado para o seu e-mail."}
-
-# O endpoint de verificação de código é o mesmo do cadastro
-# O endpoint de definir senha é o mesmo do cadastro
 
 # --- LOGIN (TOKEN) ---
 
