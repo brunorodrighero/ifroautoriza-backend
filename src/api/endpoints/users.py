@@ -51,3 +51,33 @@ def create_user_by_admin(
     
     logger.info(f"Admin '{current_user.email}' criou o usuário '{user_in.email}' com tipo '{user_in.tipo}'.")
     return db_user
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user_by_admin(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(get_current_active_admin)
+):
+    """
+    Deleta um usuário. Apenas para administradores.
+    Um admin não pode deletar a si mesmo.
+    """
+    # Impede que um admin delete a própria conta
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Você não pode deletar sua própria conta de administrador.",
+        )
+
+    user_to_delete = db.query(models.Usuario).filter(models.Usuario.id == user_id).first()
+    if not user_to_delete:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado.",
+        )
+
+    db.delete(user_to_delete)
+    db.commit()
+    
+    logger.warning(f"Admin '{current_user.email}' DELETOU o usuário '{user_to_delete.email}' (ID: {user_id}).")
+    return
