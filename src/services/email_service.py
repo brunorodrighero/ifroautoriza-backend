@@ -29,12 +29,32 @@ class EmailService:
     )
 
     @classmethod
+    def format_event_date(cls, evento: Evento) -> str:
+        """Formata a data do evento para exibição nos e-mails."""
+        start_date = evento.data_inicio.strftime('%d/%m/%Y')
+        end_date = evento.data_fim.strftime('%d/%m/%Y') if evento.data_fim else None
+        
+        date_str = start_date
+        if end_date and end_date != start_date:
+            date_str = f"de {start_date} a {end_date}"
+            
+        if evento.horario:
+            date_str += f" - {evento.horario}"
+            
+        return date_str
+
+    @classmethod
     async def send_email(cls, subject: str, recipients: list, template_name: str, template_body: dict):
         try:
             valid_recipients = [email for email in recipients if email]
             if not valid_recipients:
                 logger.warning(f"Nenhum destinatário válido para o email '{subject}'. Pulando envio.")
                 return
+            
+            # --- CORREÇÃO: Adiciona a data formatada ao corpo do template ---
+            if 'evento' in template_body:
+                template_body['formatted_event_date'] = cls.format_event_date(template_body['evento'])
+
             template = cls.template_env.get_template(template_name)
             html_content = template.render(template_body)
             message = MessageSchema(

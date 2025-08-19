@@ -26,8 +26,7 @@
         <div class="details">
             <h3>Detalhes do Evento:</h3>
             <p><strong>Evento:</strong> {{ evento.titulo }}</p>
-            <p><strong>Data:</strong> {{ evento.data_evento.strftime('%d/%m/%Y às %H:%M') }}</p>
-            <p><strong>Local:</strong> {{ evento.local_evento }}</p>
+            <p><strong>Data:</strong> {{ formatted_event_date }}</p> <p><strong>Local:</strong> {{ evento.local_evento }}</p>
         </div>
         
         <p>Você receberá um novo email assim que a autorização for aprovada ou rejeitada. Não é necessário realizar nenhuma outra ação no momento.</p>

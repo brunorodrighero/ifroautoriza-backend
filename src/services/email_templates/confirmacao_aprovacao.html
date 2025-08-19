@@ -18,8 +18,7 @@
         <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 5px; margin: 20px 0;">
             <h3>Detalhes do Evento Confirmado:</h3>
             <p><strong>Evento:</strong> {{ evento.titulo }}</p>
-            <p><strong>Data:</strong> {{ evento.data_evento.strftime('%d/%m/%Y às %H:%M') }}</p>
-            <p><strong>Local:</strong> {{ evento.local_evento }}</p>
+            <p><strong>Data:</strong> {{ formatted_event_date }}</p> <p><strong>Local:</strong> {{ evento.local_evento }}</p>
         </div>
         
         <p>O(A) aluno(a) está oficialmente autorizado(a) a participar. Prepare-se para uma ótima experiência!</p>

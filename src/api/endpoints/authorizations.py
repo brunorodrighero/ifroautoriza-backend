@@ -2,7 +2,7 @@
 from fastapi import (APIRouter, Depends, HTTPException, BackgroundTasks, 
                      UploadFile, File, Form, status)
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload # Importar joinedload
 from pathlib import Path
 from typing import List
 import re
@@ -40,7 +40,6 @@ def preregister_student(
 ):
     """Pré-cadastra um aluno em um evento, inserindo apenas nome e matrícula."""
     
-    # Validação e limpeza da matrícula
     cleaned_matricula = clean_and_validate_matricula(student_in.matricula_aluno)
 
     db_auth = models.Autorizacao(
@@ -56,9 +55,17 @@ def preregister_student(
     return db_auth
 
 @router.get("/eventos/{evento_id}/autorizacoes", response_model=List[schemas.AuthorizationForProfessor])
-def get_event_authorizations(event: models.Evento = Depends(get_event_by_id_for_user)):
+def get_event_authorizations(event: models.Evento = Depends(get_event_by_id_for_user), db: Session = Depends(get_db)):
     """Busca todas as autorizações (em qualquer status) de um evento específico."""
-    return sorted(event.autorizacoes, key=lambda x: x.nome_aluno)
+    # --- CORREÇÃO AQUI: Carrega o relacionamento 'presencas' para evitar o erro 422 ---
+    authorizations = db.query(models.Autorizacao).filter(
+        models.Autorizacao.evento_id == event.id
+    ).options(
+        joinedload(models.Autorizacao.presencas)
+    ).order_by(models.Autorizacao.nome_aluno).all()
+    return authorizations
+    # --- FIM DA CORREÇÃO ---
+
 
 @router.patch("/{autorizacao_id}/status", response_model=schemas.AuthorizationForProfessor)
 async def update_authorization_status(
@@ -83,7 +90,6 @@ async def update_authorization_status(
     db.refresh(autorizacao)
     return autorizacao
 
-# --- NOVO ENDPOINT DE PRESENÇA ---
 @router.patch("/{autorizacao_id}/presenca/{data_presenca}", response_model=schemas.Presenca)
 def mark_attendance(
     autorizacao_id: int,
@@ -96,7 +102,6 @@ def mark_attendance(
     if autorizacao.status != 'aprovado':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Apenas autorizações aprovadas podem ter a presença marcada.")
 
-    # Verifica se a data da presença está dentro do intervalo do evento
     event_start = autorizacao.evento.data_inicio
     event_end = autorizacao.evento.data_fim or event_start
     if not (event_start <= data_presenca <= event_end):
@@ -111,7 +116,6 @@ def mark_attendance(
     if presenca_update.presente_ida is not None:
         presenca.presente_ida = presenca_update.presente_ida
     
-    # Lógica para a volta: só pode marcar a volta se a ida estiver marcada
     if presenca_update.presente_volta is not None:
         if not presenca.presente_ida and presenca_update.presente_volta:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Não é possível marcar o retorno sem ter marcado a presença na ida.")
