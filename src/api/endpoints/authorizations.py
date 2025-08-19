@@ -1,9 +1,12 @@
+# src/api/endpoints/authorizations.py
 from fastapi import (APIRouter, Depends, HTTPException, BackgroundTasks, 
                      UploadFile, File, Form, status)
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pathlib import Path
 from typing import List
+import re
+from datetime import date
 
 from src.api.deps import get_db, get_current_active_user, get_event_by_id_for_user, get_authorization_by_id_for_user
 from src.db import models, schemas
@@ -14,8 +17,19 @@ from src.core.config import settings
 
 router = APIRouter()
 
+def clean_and_validate_matricula(matricula: str) -> str:
+    if not matricula:
+        return None
+    cleaned = re.sub(r'\D', '', matricula)
+    if len(cleaned) < 13:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A matrícula, se informada, deve conter pelo menos 13 dígitos."
+        )
+    return cleaned
+
 # =================================================================
-# ROTAS DO PROFESSOR/ADMINISTRADOR (REQUEREM AUTENTICAÇÃO)
+# ROTAS DO PROFESSOR/ADMINISTRADOR
 # =================================================================
 
 @router.post("/eventos/{evento_id}/pre-cadastrar", response_model=schemas.AuthorizationForProfessor, status_code=status.HTTP_201_CREATED)
@@ -25,7 +39,16 @@ def preregister_student(
     db: Session = Depends(get_db)
 ):
     """Pré-cadastra um aluno em um evento, inserindo apenas nome e matrícula."""
-    db_auth = models.Autorizacao(**student_in.model_dump(), evento_id=db_event.id, status='pré-cadastrado')
+    
+    # Validação e limpeza da matrícula
+    cleaned_matricula = clean_and_validate_matricula(student_in.matricula_aluno)
+
+    db_auth = models.Autorizacao(
+        nome_aluno=student_in.nome_aluno,
+        matricula_aluno=cleaned_matricula,
+        evento_id=db_event.id,
+        status='pré-cadastrado'
+    )
     db.add(db_auth)
     db.commit()
     db.refresh(db_auth)
@@ -44,14 +67,12 @@ async def update_authorization_status(
     autorizacao: models.Autorizacao = Depends(get_authorization_by_id_for_user),
     db: Session = Depends(get_db)
 ):
-    """UNIFICADO: Aprova ou rejeita uma autorização e dispara o e-mail correspondente."""
     if status_update.status not in ['aprovado', 'rejeitado']:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status inválido. Use 'aprovado' ou 'rejeitado'.")
 
     autorizacao.status = status_update.status
     db.commit()
     
-    # CORREÇÃO: Passando o ID em vez do objeto para a tarefa em segundo plano
     if autorizacao.status == 'aprovado':
         background_tasks.add_task(EmailService.send_approval_notification_to_student, autorizacao.id)
         logger.info(f"Autorização {autorizacao.id} APROVADA.")
@@ -62,25 +83,49 @@ async def update_authorization_status(
     db.refresh(autorizacao)
     return autorizacao
 
-@router.patch("/{autorizacao_id}/presenca", response_model=schemas.AuthorizationForProfessor)
+# --- NOVO ENDPOINT DE PRESENÇA ---
+@router.patch("/{autorizacao_id}/presenca/{data_presenca}", response_model=schemas.Presenca)
 def mark_attendance(
-    presente: bool,
+    autorizacao_id: int,
+    data_presenca: date,
+    presenca_update: schemas.PresencaUpdate,
     autorizacao: models.Autorizacao = Depends(get_authorization_by_id_for_user),
     db: Session = Depends(get_db)
 ):
-    """Marca a presença de um aluno em um evento."""
+    """Marca a presença de ida ou de volta de um aluno em uma data específica."""
     if autorizacao.status != 'aprovado':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Apenas autorizações aprovadas podem ter a presença marcada.")
+
+    # Verifica se a data da presença está dentro do intervalo do evento
+    event_start = autorizacao.evento.data_inicio
+    event_end = autorizacao.evento.data_fim or event_start
+    if not (event_start <= data_presenca <= event_end):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A data da presença está fora do período do evento.")
+
+    presenca = db.query(models.Presenca).filter_by(autorizacao_id=autorizacao_id, data_presenca=data_presenca).first()
+
+    if not presenca:
+        presenca = models.Presenca(autorizacao_id=autorizacao_id, data_presenca=data_presenca)
+        db.add(presenca)
+
+    if presenca_update.presente_ida is not None:
+        presenca.presente_ida = presenca_update.presente_ida
     
-    autorizacao.presente = presente
+    # Lógica para a volta: só pode marcar a volta se a ida estiver marcada
+    if presenca_update.presente_volta is not None:
+        if not presenca.presente_ida and presenca_update.presente_volta:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Não é possível marcar o retorno sem ter marcado a presença na ida.")
+        presenca.presente_volta = presenca_update.presente_volta
+
     db.commit()
-    db.refresh(autorizacao)
-    logger.info(f"Presença do aluno '{autorizacao.nome_aluno}' (Auth ID: {autorizacao.id}) marcada como {presente}.")
-    return autorizacao
+    db.refresh(presenca)
+    logger.info(f"Presença do aluno (Auth ID: {autorizacao.id}) atualizada para a data {data_presenca}: Ida={presenca.presente_ida}, Volta={presenca.presente_volta}")
+    
+    return presenca
+
 
 @router.get("/{autorizacao_id}/arquivo", response_class=FileResponse)
 def get_authorization_file(autorizacao: models.Autorizacao = Depends(get_authorization_by_id_for_user)):
-    """Permite que o professor baixe o arquivo de autorização enviado pelo aluno."""
     if not autorizacao.caminho_arquivo:
         raise HTTPException(status_code=404, detail="Nenhum arquivo associado a esta autorização.")
         
@@ -92,7 +137,7 @@ def get_authorization_file(autorizacao: models.Autorizacao = Depends(get_authori
     return FileResponse(path=file_path, filename=autorizacao.nome_arquivo_original, media_type=autorizacao.tipo_arquivo)
 
 # =================================================================
-# ROTAS PÚBLICAS (NÃO REQUEREM AUTENTICAÇÃO)
+# ROTAS PÚBLICAS
 # =================================================================
 @router.post("/evento/{evento_id}/inscrever-se", response_model=schemas.AuthorizationForProfessor, status_code=status.HTTP_201_CREATED)
 async def student_self_register_and_submit(
@@ -106,9 +151,11 @@ async def student_self_register_and_submit(
     email_responsavel: str = Form(...),
     arquivo: UploadFile = File(...)
 ):
-    """
-    Permite que um aluno se inscreva e submeta a autorização diretamente.
-    """
+    if email_aluno.lower() == email_responsavel.lower():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O e-mail do aluno e do responsável não podem ser iguais.")
+
+    cleaned_matricula = clean_and_validate_matricula(matricula_aluno)
+    
     db_event = db.query(models.Evento).filter(models.Evento.id == evento_id).first()
     if not db_event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado.")
@@ -116,7 +163,7 @@ async def student_self_register_and_submit(
     saved_file_path = await save_upload_file(arquivo)
     
     new_auth_data = {
-        "evento_id": evento_id, "nome_aluno": nome_aluno, "matricula_aluno": matricula_aluno,
+        "evento_id": evento_id, "nome_aluno": nome_aluno, "matricula_aluno": cleaned_matricula,
         "email_aluno": email_aluno, "nome_responsavel": nome_responsavel,
         "email_responsavel": email_responsavel, "caminho_arquivo": saved_file_path,
         "nome_arquivo_original": arquivo.filename, "tamanho_arquivo": arquivo.size,
@@ -129,7 +176,6 @@ async def student_self_register_and_submit(
     db.refresh(db_auth)
     logger.info(f"Nova inscrição e submissão recebida para o aluno '{db_auth.nome_aluno}' (Auth ID: {db_auth.id}).")
     
-    # CORREÇÃO: Passando o ID do objeto recém-criado para as tarefas em segundo plano
     background_tasks.add_task(EmailService.send_submission_confirmation_to_student, db_auth.id)
     background_tasks.add_task(EmailService.notify_teacher_of_new_submission, db_auth.id)
     
@@ -155,7 +201,9 @@ async def student_submit_authorization(
     email_responsavel: str = Form(...),
     arquivo: UploadFile = File(...)
 ):
-    """Recebe os dados e o arquivo do aluno, atualizando o registro pré-cadastrado."""
+    if email_aluno.lower() == email_responsavel.lower():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O e-mail do aluno e do responsável não podem ser iguais.")
+
     db_auth = db.query(models.Autorizacao).filter(models.Autorizacao.id == autorizacao_id).first()
     if not db_auth or db_auth.status != 'pré-cadastrado':
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cadastro de aluno não encontrado ou já submetido.")
@@ -175,7 +223,6 @@ async def student_submit_authorization(
     db.refresh(db_auth)
     logger.info(f"Submissão recebida para o aluno '{db_auth.nome_aluno}' (Auth ID: {db_auth.id}).")
     
-    # CORREÇÃO: Passando o ID para as tarefas em segundo plano
     background_tasks.add_task(EmailService.send_submission_confirmation_to_student, db_auth.id)
     background_tasks.add_task(EmailService.notify_teacher_of_new_submission, db_auth.id)
     

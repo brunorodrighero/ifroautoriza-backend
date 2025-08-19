@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import uuid
 from typing import List
+from datetime import date
 
 from src.api.deps import get_db, get_current_active_user, get_event_by_id_for_user
 from src.db import models, schemas
@@ -13,15 +14,19 @@ from . import event_model_generator
 router = APIRouter()
 
 # =================================================================
-# ROTAS PÚBLICAS (NOVAS)
+# ROTAS PÚBLICAS (ATUALIZADAS)
 # =================================================================
 
 @router.get("/publicos", response_model=List[schemas.EventPublicList])
 def read_public_events(db: Session = Depends(get_db)):
     """
-    Retorna uma lista simplificada de todos os eventos para a página pública.
+    Retorna uma lista simplificada de eventos cuja data final (ou inicial, se não houver final)
+    é hoje ou no futuro.
     """
-    events = db.query(models.Evento).order_by(models.Evento.data_evento.desc()).all()
+    today = date.today()
+    events = db.query(models.Evento).filter(
+        (models.Evento.data_fim >= today) | (models.Evento.data_fim == None and models.Evento.data_inicio >= today)
+    ).order_by(models.Evento.data_inicio.asc()).all()
     return events
 
 @router.get("/publico/{link_unico}", response_model=schemas.EventPublicDetail)
@@ -34,7 +39,9 @@ def read_public_event_by_link(link_unico: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado")
     return event
 
-
+# =================================================================
+# ROTAS DO PROFESSOR/ADMINISTRADOR (ATUALIZADAS)
+# =================================================================
 
 @router.post("/", response_model=schemas.Event, status_code=status.HTTP_201_CREATED)
 def create_event(
@@ -43,7 +50,12 @@ def create_event(
     current_user: models.Usuario = Depends(get_current_active_user)
 ):
     link_unico = str(uuid.uuid4())
-    db_event = models.Evento(**event_in.model_dump(), usuario_id=current_user.id, link_unico=link_unico)
+    # Garante que data_fim seja nulo se não for fornecido
+    event_data = event_in.model_dump()
+    if 'data_fim' in event_data and not event_data['data_fim']:
+        event_data['data_fim'] = None
+
+    db_event = models.Evento(**event_data, usuario_id=current_user.id, link_unico=link_unico)
     db.add(db_event)
     db.commit()
     db.refresh(db_event)
@@ -55,11 +67,10 @@ def read_events(
     db: Session = Depends(get_db),
     current_user: models.Usuario = Depends(get_current_active_user)
 ):
-    # Admin vê todos os eventos, professor vê apenas os seus.
     if current_user.tipo == 'admin':
-        events = db.query(models.Evento).order_by(models.Evento.data_evento.desc()).all()
+        events = db.query(models.Evento).order_by(models.Evento.data_inicio.desc()).all()
     else:
-        events = db.query(models.Evento).filter(models.Evento.usuario_id == current_user.id).order_by(models.Evento.data_evento.desc()).all()
+        events = db.query(models.Evento).filter(models.Evento.usuario_id == current_user.id).order_by(models.Evento.data_inicio.desc()).all()
 
     for event in events:
         event.autorizacoes_count = len(event.autorizacoes)
@@ -67,7 +78,6 @@ def read_events(
 
 @router.get("/{event_id}", response_model=schemas.Event)
 def read_event(event: models.Evento = Depends(get_event_by_id_for_user)):
-    # A dependência já faz a busca e a verificação de permissão.
     return event
 
 @router.put("/{event_id}", response_model=schemas.Event)
