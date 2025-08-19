@@ -1,3 +1,4 @@
+# src/main.py
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -9,7 +10,6 @@ from datetime import datetime
 
 from src.core.config import settings
 from src.utils.logger import logger
-# CORREÇÃO AQUI: Adicionado 'users' à lista de importação
 from src.api.endpoints import auth, events, authorizations, users
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
@@ -19,13 +19,21 @@ app = FastAPI(title=settings.PROJECT_NAME)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# --- CORREÇÃO DO CORS AQUI ---
+# Adiciona a origem do localhost de desenvolvimento à lista de origens permitidas
+allowed_origins = [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
+if "http://localhost:5173" not in allowed_origins:
+    allowed_origins.append("http://localhost:5173")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+    allow_origins=allowed_origins, # Usa a nova lista com o localhost
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# --- FIM DA CORREÇÃO ---
+
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 @app.middleware("http")

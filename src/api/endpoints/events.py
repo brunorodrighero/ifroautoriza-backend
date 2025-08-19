@@ -1,6 +1,7 @@
 # src/api/endpoints/events.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_ # Importar 'or_' e 'and_'
 import uuid
 from typing import List
 from datetime import date
@@ -14,7 +15,7 @@ from . import event_model_generator
 router = APIRouter()
 
 # =================================================================
-# ROTAS PÚBLICAS (ATUALIZADAS)
+# ROTAS PÚBLICAS (ATUALIZADAS E CORRIGIDAS)
 # =================================================================
 
 @router.get("/publicos", response_model=List[schemas.EventPublicList])
@@ -24,10 +25,18 @@ def read_public_events(db: Session = Depends(get_db)):
     é hoje ou no futuro.
     """
     today = date.today()
+    # --- CORREÇÃO AQUI ---
+    # A lógica foi reescrita usando as funções or_ e and_ do SQLAlchemy
+    # para evitar o erro de ambiguidade booleana.
     events = db.query(models.Evento).filter(
-        (models.Evento.data_fim >= today) | (models.Evento.data_fim == None and models.Evento.data_inicio >= today)
+        or_(
+            models.Evento.data_fim >= today,
+            and_(models.Evento.data_fim.is_(None), models.Evento.data_inicio >= today)
+        )
     ).order_by(models.Evento.data_inicio.asc()).all()
+    # --- FIM DA CORREÇÃO ---
     return events
+
 
 @router.get("/publico/{link_unico}", response_model=schemas.EventPublicDetail)
 def read_public_event_by_link(link_unico: str, db: Session = Depends(get_db)):
