@@ -2,13 +2,13 @@
 from fastapi import (APIRouter, Depends, HTTPException, BackgroundTasks, 
                      UploadFile, File, Form, status)
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session, joinedload # Importar joinedload
+from sqlalchemy.orm import Session, joinedload
 from pathlib import Path
 from typing import List
 import re
 from datetime import date
 
-from src.api.deps import get_db, get_current_active_user, get_event_by_id_for_user, get_authorization_by_id_for_user
+from src.api.deps import get_db, get_current_active_user, get_authorization_by_id_for_user, get_event_by_id_for_user
 from src.db import models, schemas
 from src.services.email_service import EmailService
 from src.services.file_service import save_upload_file
@@ -17,6 +17,7 @@ from src.core.config import settings
 
 router = APIRouter()
 
+# ... (função clean_and_validate_matricula permanece a mesma) ...
 def clean_and_validate_matricula(matricula: str) -> str:
     if not matricula:
         return None
@@ -32,6 +33,7 @@ def clean_and_validate_matricula(matricula: str) -> str:
 # ROTAS DO PROFESSOR/ADMINISTRADOR
 # =================================================================
 
+# ... (rota preregister_student permanece a mesma) ...
 @router.post("/eventos/{evento_id}/pre-cadastrar", response_model=schemas.AuthorizationForProfessor, status_code=status.HTTP_201_CREATED)
 def preregister_student(
     student_in: schemas.AuthorizationPreRegister,
@@ -55,18 +57,34 @@ def preregister_student(
     return db_auth
 
 @router.get("/eventos/{evento_id}/autorizacoes", response_model=List[schemas.AuthorizationForProfessor])
-def get_event_authorizations(event: models.Evento = Depends(get_event_by_id_for_user), db: Session = Depends(get_db)):
-    """Busca todas as autorizações (em qualquer status) de um evento específico."""
-    # --- CORREÇÃO AQUI: Carrega o relacionamento 'presencas' para evitar o erro 422 ---
-    authorizations = db.query(models.Autorizacao).filter(
-        models.Autorizacao.evento_id == event.id
-    ).options(
+def get_event_authorizations(
+    evento_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.Usuario = Depends(get_current_active_user)
+):
+    """Busca todas as autorizações de um evento específico, garantindo o carregamento das presenças."""
+    # --- CORREÇÃO AQUI: Refatorado para uma consulta direta e robusta ---
+    query = db.query(models.Autorizacao).options(
         joinedload(models.Autorizacao.presencas)
-    ).order_by(models.Autorizacao.nome_aluno).all()
+    ).join(models.Evento).filter(models.Autorizacao.evento_id == evento_id)
+
+    # Garante que o usuário só possa ver autorizações de seus próprios eventos (ou se for admin)
+    if current_user.tipo != 'admin':
+        query = query.filter(models.Evento.usuario_id == current_user.id)
+
+    authorizations = query.order_by(models.Autorizacao.nome_aluno).all()
+
+    # Verifica se o evento existe para o usuário
+    if not authorizations:
+        event = db.query(models.Evento).filter_by(id=evento_id).first()
+        if not event or (current_user.tipo != 'admin' and event.usuario_id != current_user.id):
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado ou sem permissão de acesso.")
+
     return authorizations
     # --- FIM DA CORREÇÃO ---
 
 
+# ... (o resto do arquivo authorizations.py permanece o mesmo) ...
 @router.patch("/{autorizacao_id}/status", response_model=schemas.AuthorizationForProfessor)
 async def update_authorization_status(
     status_update: schemas.StatusUpdate,

@@ -1,7 +1,7 @@
 # src/api/deps.py
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload # Importar joinedload
 from jose import JWTError, jwt
 
 from src.core.config import settings
@@ -26,7 +26,6 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         email: str = payload.get("sub")
-        # Adicionando a extração do 'tipo' do token
         user_type: str = payload.get("tipo", "professor") 
         if email is None:
             raise credentials_exception
@@ -37,7 +36,6 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     if user is None:
         raise credentials_exception
     
-    # Atribui o tipo do token ao objeto de usuário para uso nas dependências
     user.token_type = user_type
     return user
 
@@ -46,11 +44,7 @@ def get_current_active_user(current_user: models.Usuario = Depends(get_current_u
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuário inativo")
     return current_user
 
-# ===== NOVA DEPENDÊNCIA DE ADMIN =====
 def get_current_active_admin(current_user: models.Usuario = Depends(get_current_active_user)) -> models.Usuario:
-    """
-    Verifica se o usuário atual é ativo e tem o tipo 'admin'.
-    """
     if current_user.tipo != 'admin':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
@@ -58,15 +52,11 @@ def get_current_active_admin(current_user: models.Usuario = Depends(get_current_
         )
     return current_user
 
-# ===== DEPENDÊNCIAS DE AUTORIZAÇÃO (JÁ EXISTENTES) =====
 def get_event_by_id_for_user(
     event_id: int,
     db: Session = Depends(get_db),
     current_user: models.Usuario = Depends(get_current_active_user)
 ) -> models.Evento:
-    """
-    Busca um evento e verifica se o usuário atual (professor ou admin) tem permissão para acessá-lo.
-    """
     event = db.query(models.Evento).filter(models.Evento.id == event_id).first()
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado")
@@ -84,7 +74,12 @@ def get_authorization_by_id_for_user(
     """
     Busca uma autorização e verifica se o usuário atual (professor ou admin) tem permissão para acessá-la.
     """
-    autorizacao = db.query(models.Autorizacao).filter(models.Autorizacao.id == autorizacao_id).first()
+    # --- CORREÇÃO AQUI: Adicionado joinedload para carregar as presenças ---
+    autorizacao = db.query(models.Autorizacao).options(
+        joinedload(models.Autorizacao.presencas)
+    ).filter(models.Autorizacao.id == autorizacao_id).first()
+    # --- FIM DA CORREÇÃO ---
+
     if not autorizacao:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Autorização não encontrada")
         
