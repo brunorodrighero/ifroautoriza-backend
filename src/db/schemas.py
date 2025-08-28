@@ -4,7 +4,7 @@ from typing import Optional, Literal, List
 from datetime import datetime, date
 import re
 
-# --- NOVOS Schemas de Campus ---
+# --- Schemas de Campus (Sem alterações) ---
 class CampusBase(BaseModel):
     nome: str = Field(..., min_length=3, max_length=255)
 
@@ -20,7 +20,7 @@ class Campus(CampusBase):
         from_attributes = True
 
 
-# --- Schemas de Usuário e Autenticação (Com adição de Campus) ---
+# --- Schemas de Usuário e Autenticação (Sem alterações) ---
 class ProfessorRegisterRequest(BaseModel):
     email: EmailStr
     nome: str
@@ -44,8 +44,7 @@ class Token(BaseModel):
 class UserBase(BaseModel):
     email: EmailStr
     nome: str
-    # --- ADICIONADO ---
-    campus_id: Optional[int] = None # Opcional para não quebrar usuários existentes
+    campus_id: Optional[int] = None
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
@@ -60,20 +59,18 @@ class UserUpdate(BaseModel):
     tipo: Optional[Literal['professor', 'admin']] = None
     ativo: Optional[bool] = None
     password: Optional[str] = Field(None, min_length=8)
-    # --- ADICIONADO ---
     campus_id: Optional[int] = None
 
 class User(UserBase):
     id: int
     tipo: str
     ativo: bool
-    # --- ADICIONADO ---
-    campus: Optional[Campus] = None # Para exibir os detalhes do campus
+    campus: Optional[Campus] = None
     class Config:
         from_attributes = True
 
 
-# --- Schemas de Evento (Atualizados com Campus) ---
+# --- Schemas de Evento (COM A CORREÇÃO) ---
 class EventBase(BaseModel):
     titulo: str = Field(..., min_length=3, max_length=255)
     descricao: Optional[str] = None
@@ -82,8 +79,7 @@ class EventBase(BaseModel):
     horario: Optional[str] = Field(None, max_length=50)
     local_evento: Optional[str] = Field(None, max_length=500)
     observacoes: Optional[str] = None
-    # --- ADICIONADO ---
-    campus_id: int # Obrigatório na criação e atualização
+    campus_id: int 
 
     @validator('data_fim', always=True)
     def validate_date_range(cls, v, values):
@@ -95,15 +91,19 @@ class EventCreate(EventBase):
     pass
 
 class EventUpdate(EventBase):
-    pass
+    # Tornando campus_id opcional na atualização para não forçar o envio sempre
+    campus_id: Optional[int] = None
+    titulo: Optional[str] = Field(None, min_length=3, max_length=255)
+    descricao: Optional[str] = None
+    data_inicio: Optional[date] = None
 
 class Event(EventBase):
     id: int
     link_unico: str
     usuario_id: int
     autorizacoes_count: int = 0
-    # --- ADICIONADO ---
-    campus: Campus # Para exibir os detalhes do campus
+    # --- CORREÇÃO AQUI ---
+    campus: Optional[Campus] = None # Permite que o campus seja nulo para eventos antigos
     class Config:
         from_attributes = True
 
@@ -114,8 +114,8 @@ class EventPublicList(BaseModel):
     horario: Optional[str] = None
     local_evento: Optional[str] = None
     link_unico: str
-    # --- ADICIONADO ---
-    campus: Campus # Para exibir o campus na lista pública
+    # --- CORREÇÃO AQUI ---
+    campus: Optional[Campus] = None # Permite que o campus seja nulo para eventos antigos
     class Config:
         from_attributes = True
 
@@ -127,8 +127,8 @@ class EventPublicDetail(BaseModel):
     data_fim: Optional[date] = None
     horario: Optional[str] = None
     local_evento: Optional[str] = None
-    # --- ADICIONADO ---
-    campus: Campus # Para exibir o campus nos detalhes públicos
+    # --- CORREÇÃO AQUI ---
+    campus: Optional[Campus] = None # Permite que o campus seja nulo para eventos antigos
     class Config:
         from_attributes = True
 
@@ -144,7 +144,6 @@ class Presenca(PresencaBase):
     autorizacao_id: int
     class Config:
         from_attributes = True
-
 
 # --- Schemas de Autorização (Sem alterações) ---
 class AuthorizationPreRegister(BaseModel):
