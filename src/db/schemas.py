@@ -70,7 +70,7 @@ class User(UserBase):
         from_attributes = True
 
 
-# --- Schemas de Evento (COM A CORREÇÃO) ---
+# --- Schemas de Evento (COM A CORREÇÃO FINAL) ---
 class EventBase(BaseModel):
     titulo: str = Field(..., min_length=3, max_length=255)
     descricao: Optional[str] = None
@@ -79,6 +79,7 @@ class EventBase(BaseModel):
     horario: Optional[str] = Field(None, max_length=50)
     local_evento: Optional[str] = Field(None, max_length=500)
     observacoes: Optional[str] = None
+    # Este campus_id continua obrigatório, o que é correto para a CRIAÇÃO de eventos
     campus_id: int 
 
     @validator('data_fim', always=True)
@@ -90,20 +91,26 @@ class EventBase(BaseModel):
 class EventCreate(EventBase):
     pass
 
-class EventUpdate(EventBase):
-    # Tornando campus_id opcional na atualização para não forçar o envio sempre
-    campus_id: Optional[int] = None
+class EventUpdate(BaseModel): # Não herda mais de EventBase para ter total controle
     titulo: Optional[str] = Field(None, min_length=3, max_length=255)
     descricao: Optional[str] = None
     data_inicio: Optional[date] = None
+    data_fim: Optional[date] = None
+    horario: Optional[str] = Field(None, max_length=50)
+    local_evento: Optional[str] = Field(None, max_length=500)
+    observacoes: Optional[str] = None
+    campus_id: Optional[int] = None # Opcional na atualização
 
 class Event(EventBase):
     id: int
     link_unico: str
     usuario_id: int
     autorizacoes_count: int = 0
+    
     # --- CORREÇÃO AQUI ---
-    campus: Optional[Campus] = None # Permite que o campus seja nulo para eventos antigos
+    # Sobrescrevemos o campus_id de EventBase para que ele seja opcional na resposta
+    campus_id: Optional[int] = None 
+    campus: Optional[Campus] = None
     class Config:
         from_attributes = True
 
@@ -114,8 +121,7 @@ class EventPublicList(BaseModel):
     horario: Optional[str] = None
     local_evento: Optional[str] = None
     link_unico: str
-    # --- CORREÇÃO AQUI ---
-    campus: Optional[Campus] = None # Permite que o campus seja nulo para eventos antigos
+    campus: Optional[Campus] = None 
     class Config:
         from_attributes = True
 
@@ -127,8 +133,7 @@ class EventPublicDetail(BaseModel):
     data_fim: Optional[date] = None
     horario: Optional[str] = None
     local_evento: Optional[str] = None
-    # --- CORREÇÃO AQUI ---
-    campus: Optional[Campus] = None # Permite que o campus seja nulo para eventos antigos
+    campus: Optional[Campus] = None
     class Config:
         from_attributes = True
 
