@@ -1,6 +1,6 @@
 # src/api/endpoints/users.py
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 
 from src.api.deps import get_db, get_current_active_admin
@@ -18,7 +18,8 @@ def read_users(
     """
     Retorna todos os usuários. Apenas para administradores.
     """
-    users = db.query(models.Usuario).order_by(models.Usuario.nome).all()
+    # Usando joinedload para carregar os dados do campus e evitar N+1 queries
+    users = db.query(models.Usuario).options(joinedload(models.Usuario.campus)).order_by(models.Usuario.nome).all()
     return users
 
 @router.post("/", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
@@ -37,13 +38,24 @@ def create_user_by_admin(
             detail="Este email já está cadastrado.",
         )
     
+    # --- ALTERAÇÃO: Validar Campus ---
+    if user_in.campus_id:
+        campus = db.query(models.Campus).filter(models.Campus.id == user_in.campus_id).first()
+        if not campus:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"O Campus com ID {user_in.campus_id} não foi encontrado.",
+            )
+    # --- FIM DA ALTERAÇÃO ---
+
     hashed_password = get_password_hash(user_in.password)
     db_user = models.Usuario(
         email=user_in.email,
         nome=user_in.nome,
         senha_hash=hashed_password,
         tipo=user_in.tipo,
-        ativo=user_in.ativo
+        ativo=user_in.ativo,
+        campus_id=user_in.campus_id # Adicionado campus_id
     )
     
     db.add(db_user)
@@ -53,7 +65,6 @@ def create_user_by_admin(
     logger.info(f"Admin '{current_user.email}' criou o usuário '{user_in.email}' com tipo '{user_in.tipo}'.")
     return db_user
 
-# --- NOVO ENDPOINT DE ATUALIZAÇÃO ---
 @router.put("/{user_id}", response_model=schemas.User)
 def update_user_by_admin(
     user_id: int,
@@ -73,11 +84,20 @@ def update_user_by_admin(
 
     update_data = user_in.model_dump(exclude_unset=True)
     
+    # --- ALTERAÇÃO: Validar Campus se ele for alterado ---
+    if "campus_id" in update_data and update_data["campus_id"]:
+        campus = db.query(models.Campus).filter(models.Campus.id == update_data["campus_id"]).first()
+        if not campus:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"O Campus com ID {update_data['campus_id']} não foi encontrado.",
+            )
+    # --- FIM DA ALTERAÇÃO ---
+    
     if "password" in update_data and update_data["password"]:
         hashed_password = get_password_hash(update_data["password"])
         user_to_update.senha_hash = hashed_password
     
-    # Atualiza outros campos
     for key, value in update_data.items():
         if key != "password":
             setattr(user_to_update, key, value)

@@ -4,7 +4,23 @@ from typing import Optional, Literal, List
 from datetime import datetime, date
 import re
 
-# --- Schemas de Usuário e Autenticação (Com adição para Update) ---
+# --- NOVOS Schemas de Campus ---
+class CampusBase(BaseModel):
+    nome: str = Field(..., min_length=3, max_length=255)
+
+class CampusCreate(CampusBase):
+    pass
+
+class CampusUpdate(CampusBase):
+    pass
+
+class Campus(CampusBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+
+# --- Schemas de Usuário e Autenticação (Com adição de Campus) ---
 class ProfessorRegisterRequest(BaseModel):
     email: EmailStr
     nome: str
@@ -28,6 +44,8 @@ class Token(BaseModel):
 class UserBase(BaseModel):
     email: EmailStr
     nome: str
+    # --- ADICIONADO ---
+    campus_id: Optional[int] = None # Opcional para não quebrar usuários existentes
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
@@ -36,32 +54,36 @@ class UserAdminCreate(UserCreate):
     tipo: Literal['professor', 'admin'] = 'professor'
     ativo: Optional[bool] = True
 
-# --- NOVO SCHEMA PARA ATUALIZAÇÃO DE USUÁRIO ---
 class UserUpdate(BaseModel):
     nome: Optional[str] = None
     email: Optional[EmailStr] = None
     tipo: Optional[Literal['professor', 'admin']] = None
     ativo: Optional[bool] = None
     password: Optional[str] = Field(None, min_length=8)
+    # --- ADICIONADO ---
+    campus_id: Optional[int] = None
 
 class User(UserBase):
     id: int
     tipo: str
     ativo: bool
+    # --- ADICIONADO ---
+    campus: Optional[Campus] = None # Para exibir os detalhes do campus
     class Config:
         from_attributes = True
 
-# --- Schemas de Evento (Atualizados) ---
+
+# --- Schemas de Evento (Atualizados com Campus) ---
 class EventBase(BaseModel):
     titulo: str = Field(..., min_length=3, max_length=255)
     descricao: Optional[str] = None
-    # --- ALTERADO ---
     data_inicio: date
     data_fim: Optional[date] = None
     horario: Optional[str] = Field(None, max_length=50)
-    # --- FIM DA ALTERAÇÃO ---
     local_evento: Optional[str] = Field(None, max_length=500)
     observacoes: Optional[str] = None
+    # --- ADICIONADO ---
+    campus_id: int # Obrigatório na criação e atualização
 
     @validator('data_fim', always=True)
     def validate_date_range(cls, v, values):
@@ -80,18 +102,20 @@ class Event(EventBase):
     link_unico: str
     usuario_id: int
     autorizacoes_count: int = 0
+    # --- ADICIONADO ---
+    campus: Campus # Para exibir os detalhes do campus
     class Config:
         from_attributes = True
 
 class EventPublicList(BaseModel):
     titulo: str
-    # --- ALTERADO ---
     data_inicio: date
     data_fim: Optional[date] = None
     horario: Optional[str] = None
-    # --- FIM DA ALTERAÇÃO ---
     local_evento: Optional[str] = None
     link_unico: str
+    # --- ADICIONADO ---
+    campus: Campus # Para exibir o campus na lista pública
     class Config:
         from_attributes = True
 
@@ -99,16 +123,17 @@ class EventPublicDetail(BaseModel):
     id: int
     titulo: str
     descricao: Optional[str] = None
-    # --- ALTERADO ---
     data_inicio: date
     data_fim: Optional[date] = None
     horario: Optional[str] = None
-    # --- FIM DA ALTERAÇÃO ---
     local_evento: Optional[str] = None
+    # --- ADICIONADO ---
+    campus: Campus # Para exibir o campus nos detalhes públicos
     class Config:
         from_attributes = True
 
-# --- Schemas de Presença (NOVOS) ---
+
+# --- Schemas de Presença (Sem alterações) ---
 class PresencaBase(BaseModel):
     data_presenca: date
     presente_ida: bool = False
@@ -120,7 +145,8 @@ class Presenca(PresencaBase):
     class Config:
         from_attributes = True
 
-# --- Schemas de Autorização (Atualizados) ---
+
+# --- Schemas de Autorização (Sem alterações) ---
 class AuthorizationPreRegister(BaseModel):
     nome_aluno: str
     matricula_aluno: Optional[str] = None
@@ -149,7 +175,6 @@ class AuthorizationForProfessor(BaseModel):
     submetido_em: datetime
     caminho_arquivo: Optional[str] = None
     nome_arquivo_original: Optional[str] = None
-    # --- NOVO CAMPO ---
     presencas: List[Presenca] = []
     class Config:
         from_attributes = True
@@ -164,7 +189,6 @@ class StatusUpdate(BaseModel):
     status: str
     motivo: Optional[str] = None
 
-# --- NOVO SCHEMA PARA PRESENÇA ---
 class PresencaUpdate(BaseModel):
     presente_ida: Optional[bool] = None
     presente_volta: Optional[bool] = None

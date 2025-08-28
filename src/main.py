@@ -10,7 +10,7 @@ from datetime import datetime
 
 from src.core.config import settings
 from src.utils.logger import logger
-from src.api.endpoints import auth, events, authorizations, users
+from src.api.endpoints import auth, events, authorizations, users, campus # 1. IMPORTAR campus
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
@@ -54,6 +54,9 @@ app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Aut
 app.include_router(events.router, prefix=f"{settings.API_V1_STR}/eventos", tags=["Events"])
 app.include_router(authorizations.router, prefix=f"{settings.API_V1_STR}/autorizacoes", tags=["Authorizations"])
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/usuarios", tags=["Users"])
+# 2. INCLUIR O NOVO ROTEADOR
+app.include_router(campus.router, prefix=f"{settings.API_V1_STR}/campus", tags=["Campus"])
+
 
 @app.get(f"{settings.API_V1_STR}/health", tags=["System"])
 def health_check():

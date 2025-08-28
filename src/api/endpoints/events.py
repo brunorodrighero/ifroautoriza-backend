@@ -1,9 +1,9 @@
 # src/api/endpoints/events.py
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_ # Importar 'or_' e 'and_'
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_, and_
 import uuid
-from typing import List
+from typing import List, Optional
 from datetime import date
 
 from src.api.deps import get_db, get_current_active_user, get_event_by_id_for_user
@@ -15,26 +15,34 @@ from . import event_model_generator
 router = APIRouter()
 
 # =================================================================
-# ROTAS PÚBLICAS (ATUALIZADAS E CORRIGIDAS)
+# ROTAS PÚBLICAS (ATUALIZADAS COM FILTRO DE CAMPUS)
 # =================================================================
 
 @router.get("/publicos", response_model=List[schemas.EventPublicList])
-def read_public_events(db: Session = Depends(get_db)):
+def read_public_events(
+    campus_id: Optional[int] = Query(None, description="Filtra eventos por ID do campus. Se não fornecido, retorna de todos os campi."),
+    db: Session = Depends(get_db)
+):
     """
-    Retorna uma lista simplificada de eventos cuja data final (ou inicial, se não houver final)
-    é hoje ou no futuro.
+    Retorna uma lista simplificada de eventos futuros.
+    Pode ser filtrada por campus.
     """
     today = date.today()
-    # --- CORREÇÃO AQUI ---
-    # A lógica foi reescrita usando as funções or_ e and_ do SQLAlchemy
-    # para evitar o erro de ambiguidade booleana.
-    events = db.query(models.Evento).filter(
+    
+    query = db.query(models.Evento).options(joinedload(models.Evento.campus)).filter(
         or_(
             models.Evento.data_fim >= today,
             and_(models.Evento.data_fim.is_(None), models.Evento.data_inicio >= today)
         )
-    ).order_by(models.Evento.data_inicio.asc()).all()
-    # --- FIM DA CORREÇÃO ---
+    )
+
+    # --- ALTERAÇÃO: Aplicar filtro de campus se fornecido ---
+    if campus_id is not None:
+        query = query.filter(models.Evento.campus_id == campus_id)
+
+    events = query.order_by(models.Evento.data_inicio.asc()).all()
+    # --- FIM DA ALTERAÇÃO ---
+    
     return events
 
 
@@ -43,13 +51,13 @@ def read_public_event_by_link(link_unico: str, db: Session = Depends(get_db)):
     """
     Busca os detalhes públicos de um evento pelo seu link único.
     """
-    event = db.query(models.Evento).filter(models.Evento.link_unico == link_unico).first()
+    event = db.query(models.Evento).options(joinedload(models.Evento.campus)).filter(models.Evento.link_unico == link_unico).first()
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado")
     return event
 
 # =================================================================
-# ROTAS DO PROFESSOR/ADMINISTRADOR (ATUALIZADAS)
+# ROTAS DO PROFESSOR/ADMINISTRADOR (ATUALIZADAS COM CAMPUS)
 # =================================================================
 
 @router.post("/", response_model=schemas.Event, status_code=status.HTTP_201_CREATED)
@@ -58,8 +66,19 @@ def create_event(
     db: Session = Depends(get_db),
     current_user: models.Usuario = Depends(get_current_active_user)
 ):
+    """
+    Cria um novo evento. O evento será associado ao campus_id fornecido.
+    """
+    # --- ALTERAÇÃO: Validar Campus ---
+    campus = db.query(models.Campus).filter(models.Campus.id == event_in.campus_id).first()
+    if not campus:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"O Campus com ID {event_in.campus_id} não foi encontrado.",
+        )
+    # --- FIM DA ALTERAÇÃO ---
+
     link_unico = str(uuid.uuid4())
-    # Garante que data_fim seja nulo se não for fornecido
     event_data = event_in.model_dump()
     if 'data_fim' in event_data and not event_data['data_fim']:
         event_data['data_fim'] = None
@@ -73,17 +92,37 @@ def create_event(
 
 @router.get("/", response_model=List[schemas.Event])
 def read_events(
+    campus_id: Optional[int] = Query(None, description="Filtra eventos por ID do campus. Admin pode ver todos, professor vê apenas do seu campus por padrão."),
     db: Session = Depends(get_db),
     current_user: models.Usuario = Depends(get_current_active_user)
 ):
+    """
+    Lista eventos.
+    - Admin: Pode filtrar por qualquer campus_id. Se nenhum for fornecido, vê todos.
+    - Professor: Se campus_id for fornecido, filtra por ele. Se não, filtra pelos eventos do seu próprio campus.
+    """
+    query = db.query(models.Evento).options(joinedload(models.Evento.campus))
+
     if current_user.tipo == 'admin':
-        events = db.query(models.Evento).order_by(models.Evento.data_inicio.desc()).all()
-    else:
-        events = db.query(models.Evento).filter(models.Evento.usuario_id == current_user.id).order_by(models.Evento.data_inicio.desc()).all()
+        if campus_id is not None:
+            query = query.filter(models.Evento.campus_id == campus_id)
+    else: # Se for professor
+        # Professores só podem ver eventos do seu próprio campus, a menos que especifiquem um filtro (respeitando a regra inicial)
+        target_campus_id = campus_id if campus_id is not None else current_user.campus_id
+        
+        if target_campus_id is None and campus_id is None:
+             # Caso o professor não tenha campus e não filtre, não deve ver nenhum evento restrito
+             # Ou podemos decidir mostrar todos. Mostrando nenhum parece mais seguro.
+             query = query.filter(models.Evento.campus_id == None) # Retorna nada se campus_id for obrigatório
+        else:
+             query = query.filter(models.Evento.campus_id == target_campus_id)
+
+    events = query.order_by(models.Evento.data_inicio.desc()).all()
 
     for event in events:
         event.autorizacoes_count = len(event.autorizacoes)
     return events
+
 
 @router.get("/{event_id}", response_model=schemas.Event)
 def read_event(event: models.Evento = Depends(get_event_by_id_for_user)):
@@ -92,10 +131,24 @@ def read_event(event: models.Evento = Depends(get_event_by_id_for_user)):
 @router.put("/{event_id}", response_model=schemas.Event)
 def update_event(
     event_in: schemas.EventUpdate,
-    db_event: models.Evento = Depends(get_event_by_id_for_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db), # Adicionado db
+    db_event: models.Evento = Depends(get_event_by_id_for_user)
 ):
+    """
+    Atualiza um evento. O campus_id também pode ser atualizado.
+    """
     update_data = event_in.model_dump(exclude_unset=True)
+
+    # --- ALTERAÇÃO: Validar Campus se ele for alterado ---
+    if "campus_id" in update_data:
+        campus = db.query(models.Campus).filter(models.Campus.id == update_data["campus_id"]).first()
+        if not campus:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"O Campus com ID {update_data['campus_id']} não foi encontrado.",
+            )
+    # --- FIM DA ALTERAÇÃO ---
+
     for key, value in update_data.items():
         setattr(db_event, key, value)
     
