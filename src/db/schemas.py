@@ -24,6 +24,7 @@ class Campus(CampusBase):
 class ProfessorRegisterRequest(BaseModel):
     email: EmailStr
     nome: str
+    campus_id: int 
 
 class RequestCode(BaseModel):
     email: EmailStr
